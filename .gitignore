@@ -1,0 +1,142 @@
+# ============================================================
+# ENVIRONMENT / SECRETS
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+
+# ============================================================
+# DJANGO / PYTHON
+# ============================================================
+
+*.py[cod]
+*$py.class
+*.so
+
+__pycache__/
+*.log
+*.pot
+*.mo
+
+local_settings.py
+
+db.sqlite3
+db.sqlite3-journal
+
+media/
+staticfiles/
+
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+.pyre/
+.pytype/
+
+cython_debug/
+
+.ipynb_checkpoints/
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+
+# ============================================================
+# NODE / FRONTEND
+# ============================================================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+dist/
+dist-ssr/
+coverage/
+
+*.local
+*.tsbuildinfo
+
+/cypress/videos/
+/cypress/screenshots/
+
+
+# ============================================================
+# EDITORS / IDEs
+# ============================================================
+
+.vscode/
+!.vscode/extensions.json
+
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+.spyderproject
+.spyproject
+
+.ropeproject
+
+
+# ============================================================
+# OS FILES
+# ============================================================
+
+.DS_Store
+Thumbs.db
+
+
+# ============================================================
+# BUILD / TOOLING
+# ============================================================
+
+.pdm.toml
+__pypackages__/
+
+celerybeat-schedule
+celerybeat.pid
+
+/site
