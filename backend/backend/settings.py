@@ -51,12 +51,14 @@ CSRF_TRUSTED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'account',
     'chat',
     'notification',
@@ -97,6 +99,22 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'backend.wsgi.application'
+
+# -----------------------------------------------------------------------
+# ASGI / Django Channels  (real-time WebSocket support for chat)
+# -----------------------------------------------------------------------
+ASGI_APPLICATION = 'backend.asgi.application'
+
+# InMemoryChannelLayer is correct for a single-process deployment (Daphne
+# running one worker). For multi-process / production scale, swap this for
+# channels_redis.core.RedisChannelLayer and add a Redis service.
+# NOTE: the correct class path in channels 4.x is channels.layers, NOT
+#       channels.memory (that module does not exist in this version).
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
+}
 
 # Database
 # For Docker with MySQL

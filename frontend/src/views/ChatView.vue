@@ -109,6 +109,10 @@ export default {
       },
       activeConversationId: null,
       body: '',
+      // WebSocket state
+      chatSocket: null,
+      wsConnected: false,
+      wsError: false,
     }
   },
 
@@ -116,10 +120,104 @@ export default {
     this.getConversations()
   },
 
+  beforeUnmount() {
+    this.closeSocket()
+  },
+
   methods: {
+    // ── WebSocket helpers ────────────────────────────────────────────────
+
+    openSocket(conversationId) {
+      this.closeSocket()                      // close any previous connection
+      if (!conversationId) return
+
+      const token = this.userStore.user.access
+      if (!token) {
+        console.error('[Chat] No access token – WebSocket not opened')
+        return
+      }
+
+      // Derive ws:// or wss:// from the existing axios base URL.
+      const base   = (axios.defaults.baseURL || 'http://localhost:8000').replace(/^http/, 'ws')
+      const url    = `${base}/ws/chat/${conversationId}/?token=${token}`
+
+      let socket
+      try {
+        socket = new WebSocket(url)
+      } catch (err) {
+        console.error('[Chat] WebSocket constructor failed:', err)
+        this.wsError = true
+        return
+      }
+
+      this.chatSocket = socket
+
+      socket.onopen = () => {
+        this.wsConnected = true
+        this.wsError     = false
+      }
+
+      socket.onmessage = (event) => {
+        try {
+          this.onSocketMessage(JSON.parse(event.data))
+        } catch (err) {
+          console.error('[Chat] Could not parse WebSocket message:', err)
+        }
+      }
+
+      // Never log the token or the full URL.
+      socket.onerror = () => {
+        console.error('[Chat] WebSocket error – falling back to REST for sends')
+        this.wsError = true
+      }
+
+      socket.onclose = () => {
+        this.wsConnected = false
+        if (this.chatSocket === socket) this.chatSocket = null
+      }
+    },
+
+    closeSocket() {
+      const socket = this.chatSocket
+      if (!socket) return
+      // Detach handlers before closing so onclose side-effects don't fire.
+      socket.onopen    = null
+      socket.onmessage = null
+      socket.onerror   = null
+      socket.onclose   = null
+      try {
+        if (socket.readyState === WebSocket.OPEN ||
+            socket.readyState === WebSocket.CONNECTING) {
+          socket.close()
+        }
+      } catch (err) {
+        console.error('[Chat] Error closing WebSocket:', err)
+      }
+      this.chatSocket  = null
+      this.wsConnected = false
+    },
+
+    onSocketMessage(message) {
+      if (!message?.id) return
+      if (!this.activeConversation?.messages) return
+
+      // De-duplicate: the sender also receives the broadcast of its own message.
+      if (this.activeConversation.messages.some((m) => m.id === message.id)) return
+
+      this.activeConversation.messages.push(message)
+
+      // Keep the left-hand list sorted by latest activity.
+      const conv = this.conversations.find((c) => c.id === this.activeConversation.id)
+      if (conv) conv.modified_at_formatted = message.created_at_formatted
+      this.conversations.sort((a, b) => new Date(b.modified_at) - new Date(a.modified_at))
+    },
+
+    // ── Existing REST helpers (behaviour unchanged) ───────────────────
+
     setActiveConversation(id) {
       this.activeConversationId = id
       this.getMessages()
+      this.openSocket(id)
     },
 
     getConversations() {
@@ -134,6 +232,7 @@ export default {
           if (this.conversations.length) {
             this.activeConversationId = this.conversations[0].id
             this.getMessages()
+            this.openSocket(this.activeConversationId)
           }
         })
         .catch((error) => {
@@ -157,6 +256,14 @@ export default {
   submitForm() {
   if (!this.body.trim()) return
 
+  // ── Prefer the live WebSocket channel ──────────────────────────────
+  if (this.chatSocket?.readyState === WebSocket.OPEN) {
+    this.chatSocket.send(JSON.stringify({ body: this.body }))
+    this.body = ''
+    return
+  }
+
+  // ── REST fallback (WebSocket unavailable / connecting / errored) ───
   axios.post(`/api/chat/${this.activeConversation.id}/send/`, { body: this.body })
     .then((response) => {
       // update messages in the right pane
