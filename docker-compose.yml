@@ -15,12 +15,13 @@ services:
     # environment:
     # - DEBUG=1
     # - DB_NAME=myapp
-    # - DB_USER=postgres
-    # - DB_PASSWORD=postgres
+    # - DB_USER=mysqluser
+    # - DB_PASSWORD=mysqlpass
     # - DB_HOST=db
-    # - DB_PORT=5432
+    # - DB_PORT=3306
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - app-network
     command: >
@@ -43,20 +44,28 @@ services:
       - VITE_API_URL=http://localhost:8000
 
   db:
-    image: postgres:15-alpine
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     environment:
-      POSTGRES_DB: myapp
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      MYSQL_DATABASE: myapp
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpass
+      MYSQL_ROOT_PASSWORD: rootpass
     ports:
-      - "5432:5432"
+      - "3307:3306"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
-  postgres_data:
+  mysql_data:
   backend_media:
 
 networks:

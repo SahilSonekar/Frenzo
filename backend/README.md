@@ -13,7 +13,7 @@ This backend provides RESTful APIs for authentication, user management, posts, c
 - ✅ RESTful API built with Django REST Framework
 - ✅ Media upload support with automated NSFW content moderation
 - ✅ CORS configured for frontend integration
-- ✅ SQLite for development and PostgreSQL support
+- ✅ SQLite for development and MySQL support
 - ✅ Docker-ready deployment
 
 ---
@@ -28,7 +28,7 @@ This backend provides RESTful APIs for authentication, user management, posts, c
 - **opennsfw2** (NSFW image content moderation)
 - **django-cors-headers**
 - **SQLite**
-- **PostgreSQL (Docker Setup)**
+- **MySQL (Docker Setup)**
 
 ---
 
@@ -239,7 +239,7 @@ opennsfw2
 # 📌 Future Improvements
 
 - [ ] Add automated tests
-- [ ] Use PostgreSQL as the default database
+- [ ] Use MySQL as the default database
 - [ ] Configure cloud storage (AWS S3 / Google Cloud Storage)
 - [ ] Add CI/CD with GitHub Actions
 - [ ] Generate API documentation using Swagger/OpenAPI

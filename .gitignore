@@ -24,6 +24,7 @@ local_settings.py
 
 db.sqlite3
 db.sqlite3-journal
+*.sqlite3
 
 media/
 staticfiles/
@@ -92,6 +93,7 @@ lerna-debug.log*
 
 dist/
 dist-ssr/
+.vite/
 coverage/
 
 *.local
@@ -140,3 +142,4 @@ celerybeat-schedule
 celerybeat.pid
 
 /site
+!.env.example

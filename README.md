@@ -109,7 +109,7 @@ NSFW_DETECTION_THRESHOLD = 0.8  # Adjust sensitivity as needed
 
 ## 🚀 Getting Started (Overall Setup)
 
-This method uses Docker Compose to set up both the backend API, the frontend application, and a PostgreSQL database with a single command.
+This method uses Docker Compose to set up both the backend API, the frontend application, and a MySQL database with a single command.
 
 1. **Prerequisites:** Ensure you have [Docker](https://www.docker.com/products/docker-desktop/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
 
@@ -121,7 +121,7 @@ This method uses Docker Compose to set up both the backend API, the frontend app
      ```bash
      cp .env.example .env
      ```
-   * You can now configure your `backend/.env` file. The provided `docker-compose.yml` is pre-configured to use PostgreSQL, so no changes are needed for the default setup.
+   * You can now configure your `backend/.env` file. The provided `docker-compose.yml` is pre-configured to use MySQL, so no changes are needed for the default setup.
 
 3. **Build and Run the Containers:**
 
@@ -189,7 +189,7 @@ This is the **backend** for Frenzo, built with **Django 4.2** and **Django REST 
 * **Pillow** (for robust image handling)
 * **opennsfw2** (for NSFW image content moderation)
 * **CORS Headers** (for cross-origin resource sharing)
-* **SQLite** (default database for local development) / **PostgreSQL** (used via Docker Compose)
+* **SQLite** (default database for local development) / **MySQL** (used via Docker Compose)
 
 ## ⚙️ Backend Installation & Setup
 
@@ -311,7 +311,7 @@ opennsfw2
 ### 📌 Backend TODO / Improvements
 
 * Add automated tests
-* Switch to PostgreSQL in production
+* Switch to MySQL in production
 * Enable file storage (S3/GCS)
 * Set up CI/CD (GitHub Actions)
 * Document API with Swagger or Postman
