@@ -1,405 +1,332 @@
-# 🌟 Frenzo — Modern Social Media Platform
+# 🌟 Frenzo — Social Media Platform
 
-Welcome to **Frenzo** — a modern social media platform designed for seamless interaction, built with cutting-edge technologies for both its frontend and backend.
-
-This repository contains the complete codebase for Frenzo, encompassing a powerful **Django REST Framework API** and a dynamic **Vue 3 + Vite frontend**.
+Frenzo is a full-stack social media platform built with **Django REST Framework** and **Vue 3**. It supports user authentication, posts, real-time chat via WebSockets, notifications, search, and automated NSFW image moderation.
 
 ---
 
-## 🚀 Project Overview
+## 📋 Features
 
-Frenzo aims to provide a robust and scalable social media experience, featuring:
-
-* **User Authentication:** Secure JWT-based authentication for all user interactions.
-* **User Accounts:** Comprehensive user profiles and management.
-* **Posts & Interactions:** Create, like, and comment on posts.
-* **Real-time Chat:** A dedicated messaging system for connected users.
-* **Notifications:** Stay updated with activity relevant to your account.
-* **Search Functionality:** Easily find users, posts, and more.
-* **Media Uploads:** Support for images and other media content.
-* **Content Moderation:** Automated NSFW image detection to keep uploaded media safe.
+- **JWT Authentication** — secure login, registration, and token refresh
+- **User Profiles** — avatars, friend connections, and people-you-may-know suggestions
+- **Posts** — create, like, unlike, comment, delete, and report posts; private post support
+- **Real-Time Chat** — WebSocket-based messaging between connected users; messages are delivered instantly without polling
+- **Notifications** — activity notifications for friend requests, likes, and comments
+- **Search** — search for users and posts
+- **Media Uploads** — image attachments on posts served through Django's media pipeline
+- **NSFW Image Moderation** — uploaded images are screened via the Sightengine API before being published; explicit content is blocked at upload time
 
 ---
 
-## ⚙️ Monorepo Structure
+## 🏗️ Architecture
+
+```
+Vue Frontend (Vite · port 5173)
+        │
+        ├── REST API ──────────────────► Django REST Framework
+        │                                        │
+        └── WebSocket ─────────────────► Daphne / ASGI
+                                                 │
+                                          Django Channels
+                                                 │
+                                          ChatConsumer
+                                                 │
+                                              MySQL
+```
+
+The backend is served by **Daphne** (ASGI), which handles both ordinary HTTP requests and WebSocket connections on port 8000.
+
+---
+
+## 🗂️ Project Structure
 
 ```
 frenzo/
-├── backend/             # Django REST Framework API
-│   ├── account/
-│   ├── post/
+├── backend/
+│   ├── account/            # User model, auth, friend requests
 │   ├── chat/
-│   ├── notification/
-│   ├── search/
-│   ├── moderation/      # NSFW image detection
+│   │   ├── models.py       # Conversation, ConversationMessage
+│   │   ├── api.py          # REST chat endpoints
+│   │   ├── consumers.py    # WebSocket ChatConsumer (JWT auth + broadcast)
+│   │   ├── routing.py      # WebSocket URL routing
+│   │   └── serializers.py
+│   ├── notification/       # Notification model and API
+│   ├── post/
+│   │   ├── models.py       # Post, Comment, Like, Trend, PostAttachment
+│   │   ├── api.py
+│   │   └── moderation.py   # Sightengine NSFW detection
+│   ├── search/             # User and post search
+│   ├── scripts/            # Management utility scripts
 │   ├── backend/
-│   ├── media/
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   └── asgi.py         # ProtocolTypeRouter (HTTP + WebSocket)
 │   ├── manage.py
+│   ├── requirements.txt
 │   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── .env
-│   └── requirements.txt
-├── frontend/            # Vue 3 + Vite Application
-│   ├── public/
+│   └── .env.example
+├── frontend/
 │   ├── src/
 │   │   ├── assets/
 │   │   ├── components/
-│   │   ├── pages/
+│   │   ├── views/          # ChatView, FeedView, ProfileView, etc.
 │   │   ├── router/
-│   │   ├── store/
+│   │   ├── stores/         # Pinia user store
 │   │   └── main.js
-│   ├── Dockerfile
-│   ├── .dockerignore
 │   ├── index.html
 │   ├── package.json
 │   ├── tailwind.config.js
-│   └── vite.config.js
+│   ├── vite.config.js
+│   └── Dockerfile
+├── docs/
+│   └── uml-diagram.svg
 ├── docker-compose.yml
-└── README.md            # This file
+└── README.md
 ```
-
-> **Note:** Adjust the `moderation/` app path above if your NSFW detection logic lives inside an existing app (e.g. `post/`) rather than its own app.
 
 ---
 
-## 🗂 Database Schema
+## 🗃️ Database Schema
 
 ### UML Class Diagram
 
 ![UML Diagram](docs/uml-diagram.svg)
 
-For an interactive version with zoom and pan capabilities: *Interactive UML Diagram (Coming Soon)*
-
 ### Core Models
-- **User** — Main user entity with authentication and profile data
-- **Post** — User-generated content with privacy controls
-- **Comment** — Comments on posts
-- **Like** — Like interactions on posts
 
-### Communication Models
-- **Conversation** — Private messaging between users
-- **ConversationMessage** — Individual messages in conversations
-- **FriendshipRequest** — Friend request management
-
-### Support Models
-- **Notification** — System notifications for users
-- **PostAttachment** — File attachments for posts, includes moderation status
-- **Trend** — Trending hashtags tracking
+| Model | App | Description |
+|---|---|---|
+| `User` | `account` | Custom user with email auth, avatar, friend list |
+| `FriendshipRequest` | `account` | Friend request with sent/accepted/rejected status |
+| `Post` | `post` | User post with body, privacy flag, like/comment counts |
+| `PostAttachment` | `post` | Image attachment with NSFW score and flagged status |
+| `Comment` | `post` | Comment on a post |
+| `Like` | `post` | Like on a post |
+| `Trend` | `post` | Tracked hashtag and occurrence count |
+| `Conversation` | `chat` | 1-to-1 conversation between two users |
+| `ConversationMessage` | `chat` | Individual message in a conversation |
+| `Notification` | `notification` | Activity notification for a user |
 
 ---
 
-## 🛡️ Content Moderation (NSFW Detection)
+## 💬 Real-Time Chat
 
-Frenzo automatically screens uploaded images to keep the platform safe, using **opennsfw2** for on-upload NSFW classification.
+Frenzo chat uses two complementary layers:
+
+**REST API** — handles conversation creation, message history retrieval, and sending messages when a WebSocket connection is unavailable.
+
+**WebSocket** — provides instant message delivery to all participants in a conversation without any polling.
+
+### How it works
+
+1. When a user opens a conversation, the frontend opens a WebSocket connection to:
+   ```
+   ws://localhost:8000/ws/chat/<conversation_id>/?token=<jwt_access_token>
+   ```
+2. **ChatConsumer** validates the JWT access token from the query string using the same `djangorestframework-simplejwt` library used by the REST APIs. An invalid or missing token closes the connection immediately (code `4001`).
+3. **Membership is verified** — a user can only connect to a conversation they belong to. Knowing a conversation UUID is not enough; non-members are rejected (code `4003`).
+4. When the user sends a message, the consumer saves it to MySQL using the existing `ConversationMessage` model (identical to the REST endpoint).
+5. The saved message is **broadcast** to the channel group for that conversation, so every connected participant receives it in real time.
+6. The frontend de-duplicates messages by ID so the sender's own message is not displayed twice.
+7. When the user navigates away, the WebSocket closes cleanly and the consumer removes itself from the channel group.
+
+### Channel layer
+
+`InMemoryChannelLayer` is used, which is correct for a single-process Daphne deployment. If the application is scaled across multiple workers or processes, swap in `channels_redis.core.RedisChannelLayer` — no changes to the consumer are required.
+
+### REST fallback
+
+If the WebSocket connection is unavailable or still connecting, the frontend falls back to the existing REST endpoint (`POST /api/chat/<id>/send/`) automatically.
+
+---
+
+## 🔞 NSFW Image Moderation
+
+When a user uploads an image (post attachment), it is checked against the **Sightengine nudity detection API** (`nudity-2.1` model) before being saved.
 
 **How it works:**
-1. When a user uploads an image (post/profile media), the image is passed through the NSFW detection model before it's saved.
-2. The model returns a probability score indicating how likely the image is to contain unsafe content.
-3. If the score crosses the configured threshold, the upload is blocked and the user receives an error response instead of the image being published.
-4. Clean images proceed through the normal upload pipeline and are stored as usual.
 
-**Configuration:**
-```python
-NSFW_DETECTION_THRESHOLD = 0.8  # Adjust sensitivity as needed
-```
+1. The uploaded file is sent to the Sightengine API synchronously at upload time.
+2. The API returns a nudity analysis. Only the three explicit-content categories are used to calculate the block score: `sexual_activity`, `sexual_display`, and `erotica`. Suggestive or contextual categories (swimwear, cleavage, etc.) are intentionally excluded to avoid false positives.
+3. The block score is the maximum of those three values. If it reaches or exceeds **0.5**, the upload is rejected, the file is deleted, and the user receives an error response.
+4. If the score is below the threshold, the image is saved and the post proceeds normally. The raw score is stored on `PostAttachment.nsfw_score` for reference.
 
-> ⚠️ Update this section with your actual threshold value, model version, and whether moderation runs synchronously on upload or asynchronously via a background task — this is a placeholder based on a typical opennsfw2 integration.
+**Configuration:** Sightengine API credentials are read from environment variables `SIGHTENGINE_API_USER` and `SIGHTENGINE_API_SECRET`.
 
 ---
 
-## 🚀 Getting Started (Overall Setup)
+## 🚀 Getting Started with Docker Compose
 
-This method uses Docker Compose to set up both the backend API, the frontend application, and a MySQL database with a single command.
+The recommended way to run Frenzo. Docker Compose starts the Django backend, Vue frontend, and MySQL database together.
 
-1. **Prerequisites:** Ensure you have [Docker](https://www.docker.com/products/docker-desktop/) and [Docker Compose](https://docs.docker.com/compose/install/) installed.
+### Prerequisites
 
-2. **Set up Environment Variables:**
+- [Docker](https://www.docker.com/products/docker-desktop/) and Docker Compose installed
 
-   * Navigate to the `backend/` directory.
-   * Copy the example environment file:
+### Steps
 
-     ```bash
-     cp .env.example .env
-     ```
-   * You can now configure your `backend/.env` file. The provided `docker-compose.yml` is pre-configured to use MySQL, so no changes are needed for the default setup.
-
-3. **Build and Run the Containers:**
-
-   * From the root `frenzo/` directory, build the images and start the containers without running migrations yet:
-
-     ```bash
-     docker compose up --build -d
-     ```
-
-4. **Run Database Migrations:**
-
+1. **Clone the repository:**
    ```bash
-   docker compose exec backend python manage.py makemigrations
+   git clone https://github.com/SahilSonekar/Frenzo.git
+   cd Frenzo
+   ```
+
+2. **Create the backend environment file:**
+   ```bash
+   cp backend/.env.example backend/.env
+   ```
+   The default values in `.env.example` match the Docker Compose MySQL configuration, so no further changes are needed for a local run. Do **not** commit `.env` — it is listed in `.gitignore`.
+
+3. **Build and start all services:**
+   ```bash
+   docker compose up --build -d
+   ```
+   The backend waits for MySQL to pass its health check before starting.
+
+4. **Run database migrations:**
+   ```bash
    docker compose exec backend python manage.py migrate
    ```
 
-5. **Restart the Containers (Optional but recommended):**
-
-   ```bash
-   docker compose restart backend
-   ```
-
-6. **Access the Application:**
-
-   * Backend API: **[http://localhost:8000](http://localhost:8000)**
-   * Frontend application: **[http://localhost:5173](http://localhost:5173)**
-
-7. **Create a Superuser (Optional):**
-
+5. **Create a superuser (optional):**
    ```bash
    docker compose exec backend python manage.py createsuperuser
    ```
 
-8. **Stopping the Services:**
+6. **Access the application:**
+   - Frontend: [http://localhost:5173](http://localhost:5173)
+   - Backend API: [http://localhost:8000](http://localhost:8000)
+   - Django Admin: [http://localhost:8000/admin](http://localhost:8000/admin)
 
-   * Press `Ctrl+C` in the terminal running `docker compose up`, or run:
+7. **Stop the services:**
+   ```bash
+   docker compose down
+   ```
 
-     ```bash
-     docker compose down -v
-     ```
+> **Note:** The MySQL data volume (`mysql_data`) is preserved when you stop the containers. Use `docker compose down -v` to remove it as well.
 
 ---
 
-### 💻 Manual Setup (Alternative)
+## 🛠️ Manual Backend Setup
 
-For developers who prefer to set up the environment directly on their machine.
+For running the backend directly without Docker.
 
-1. **Set up the Backend** — see the Backend Installation section below.
-2. **Set up the Frontend** — see the Frontend Installation section below.
+```bash
+cd backend
 
-Once both are set up and running, the frontend at `http://localhost:5173` will automatically connect to the backend at `http://127.0.0.1:8000`.
+# Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure the environment
+cp .env.example .env
+# Edit .env — set USE_SQLITE=True for local SQLite dev, or configure MySQL credentials
+
+# Apply migrations
+python manage.py migrate
+
+# Run the development server (Daphne serves automatically via INSTALLED_APPS)
+python manage.py runserver
+```
+
+The API will be available at `http://127.0.0.1:8000`.
 
 ---
 
-# 🧠 Frenzo Backend — Powered by Django REST Framework
+## 🌐 Manual Frontend Setup
 
-This is the **backend** for Frenzo, built with **Django 4.2** and **Django REST Framework**. It provides a robust and scalable API for all social media functionalities.
-
-## 📦 Backend Tech Stack
-
-* **Python 3.10+**
-* **Django 4.2**
-* **Django REST Framework**
-* **SimpleJWT** (for JWT authentication)
-* **Pillow** (for robust image handling)
-* **opennsfw2** (for NSFW image content moderation)
-* **CORS Headers** (for cross-origin resource sharing)
-* **SQLite** (default database for local development) / **MySQL** (used via Docker Compose)
-
-## ⚙️ Backend Installation & Setup
-
-1. **Navigate to the Backend Directory:**
-   ```bash
-   cd backend
-   ```
-
-2. **Create a Virtual Environment:**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Apply Migrations:**
-   ```bash
-   python manage.py migrate
-   ```
-
-5. **Create a Superuser:**
-   ```bash
-   python manage.py createsuperuser
-   ```
-
-6. **Run the Development Server:**
-   ```bash
-   python manage.py runserver
-   ```
-   The backend API will be accessible at: **http://127.0.0.1:8000**
-
-## 🔑 Backend API Authentication (JWT)
-
-Frenzo uses **JWT (JSON Web Tokens)** via `djangorestframework-simplejwt`.
-
-### Endpoints
-
-| Endpoint               | Method | Description                    |
-| :---------------------- | :----- | :------------------------------ |
-| `/api/token/`           | `POST` | Get access and refresh tokens   |
-| `/api/token/refresh/`   | `POST` | Refresh access token            |
-
-### Header Format
-
-Include your access token in the `Authorization` header for protected routes:
-`Authorization: Bearer <your_access_token>`
-
-### JWT Configuration
-
-```python
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
-}
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-### 🌐 Backend CORS Configuration
-
-```python
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Frontend URL
-]
-CORS_ALLOW_CREDENTIALS = True
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",  # Frontend URL
-]
-```
-
-### 🖼 Backend Media & Static Files
-
-Media uploads are handled using Pillow and screened through the NSFW moderation pipeline before being saved:
-
-```python
-MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-```
-
-Files are served from `/media/` during development.
-
-### 🛠 Backend Settings Summary
-
-```python
-DEBUG = True
-ALLOWED_HOSTS = []
-AUTH_USER_MODEL = 'account.User'
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-TIME_ZONE = 'Asia/Kolkata'
-```
-
-### 📦 Backend `requirements.txt`
-
-```
-asgiref==3.6.0
-Django==4.2
-django-cors-headers==3.14.0
-djangorestframework==3.14.0
-djangorestframework-simplejwt==5.2.2
-Pillow==9.5.0
-PyJWT==2.6.0
-pytz==2023.3
-sqlparse==0.4.3
-setuptools>=65.0.0
-opennsfw2
-```
-
-> ⚠️ Add the pinned version of `opennsfw2` (and any supporting libraries like `tensorflow`/`onnxruntime` it depends on) once finalized.
-
-### 🔐 Backend Security Notes
-
-* ⚠️ **`SECRET_KEY` is hardcoded:** move this to an environment variable in production.
-* ⚠️ **`DEBUG=True`:** switch to `False` when deploying to production.
-* ✅ No sensitive keys exposed in this repository.
-
-### 📌 Backend TODO / Improvements
-
-* Add automated tests
-* Switch to MySQL in production
-* Enable file storage (S3/GCS)
-* Set up CI/CD (GitHub Actions)
-* Document API with Swagger or Postman
-* Move NSFW moderation to an async background task for large uploads
+The frontend runs at `http://localhost:5173` and connects to the backend at `http://localhost:8000`.
 
 ---
 
-# 🌐 Frenzo Frontend — Vue 3 + Vite
+## 📦 Backend Dependencies
 
-This is the **frontend** for the Frenzo app, built with **Vue 3**, **Pinia**, **TailwindCSS**, and **Vite**. It delivers a fast, interactive UI that connects seamlessly to the Django REST API backend.
+| Package | Version | Purpose |
+|---|---|---|
+| `Django` | 4.2 | Web framework |
+| `djangorestframework` | 3.14.0 | REST API |
+| `djangorestframework-simplejwt` | 5.2.2 | JWT authentication |
+| `channels` | 4.0.0 | WebSocket / ASGI layer |
+| `daphne` | 4.0.0 | ASGI server |
+| `mysqlclient` | 2.2.4 | MySQL database driver |
+| `Pillow` | 9.5.0 | Image handling |
+| `django-cors-headers` | 3.14.0 | CORS headers |
+| `python-decouple` | 3.8 | Environment variable management |
+| `requests` | 2.34.2 | Sightengine API calls (NSFW moderation) |
 
-## ⚙️ Frontend Tech Stack
+Full list: `backend/requirements.txt`
 
-* ⚡ **Vue 3** — Progressive JavaScript framework
-* 🌿 **Pinia** — State management
-* 🎨 **TailwindCSS** — Utility-first CSS framework
-* 🚀 **Vite** — Lightning-fast build tool
-* 🌐 **Vue Router** — Client-side routing
-* 🔗 **Axios** — For communicating with the backend API
+---
 
-## 🚀 Frontend Getting Started
+## ⚙️ Tech Stack
 
-1. **Navigate to the Frontend Directory:**
-   ```bash
-   cd frontend
-   ```
+### Backend
+- Python 3.11
+- Django 4.2
+- Django REST Framework 3.14
+- Django Channels 4.0 + Daphne 4.0 (ASGI / WebSocket)
+- SimpleJWT 5.2
+- MySQL 8.0 via `mysqlclient`
+- Sightengine API (NSFW image moderation)
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+### Frontend
+- Vue 3
+- Vite 4
+- Pinia (state management)
+- Vue Router 4
+- Axios
+- TailwindCSS 3
 
-3. **Start development server:**
-   ```bash
-   npm run dev
-   ```
-   Your app will be running at: **http://localhost:5173**
+### Infrastructure
+- Docker Compose
+- MySQL 8.0 container with health check
+- Persistent `mysql_data` volume
 
-## 🛠 Frontend Available Scripts
+---
 
-| Script             | Description                       |
-| :------------------ | :---------------------------------- |
-| `npm run dev`       | Start local development server      |
-| `npm run build`     | Build for production                |
-| `npm run preview`   | Preview production build locally    |
+## 🔑 API Authentication
 
-## 🔗 Frontend API Integration
-
-Ensure your backend is running at `http://127.0.0.1:8000`. Authentication is handled via JWT stored securely. Axios is used for all HTTP requests to the API. If an image upload is rejected by the moderation check, the frontend surfaces the API's error response to the user.
-
-## 🧪 Frontend Environment Configuration (Optional)
-
-If needed, create a `.env` file in the `frontend/` directory to manage API base URLs or other secrets:
+All protected endpoints require a JWT access token in the `Authorization` header:
 
 ```
-VITE_API_URL=http://127.0.0.1:8000
+Authorization: Bearer <access_token>
 ```
 
-Use this variable in your Vue application via `import.meta.env.VITE_API_URL`.
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/signup/` | `POST` | Register a new user |
+| `/api/login/` | `POST` | Obtain access and refresh tokens |
+| `/api/refresh/` | `POST` | Refresh the access token |
+| `/api/me/` | `GET` | Get the authenticated user's profile |
 
-### Key Dependencies
+The access token lifetime is 30 days; the refresh token lifetime is 180 days (configurable in `settings.py`).
 
-```json
-"dependencies": {
-  "axios": "^1.3.5",
-  "pinia": "^2.0.32",
-  "resend": "^4.6.0",
-  "vue": "^3.2.47",
-  "vue-router": "^4.1.6"
-},
-"devDependencies": {
-  "@tailwindcss/forms": "^0.5.10",
-  "@vitejs/plugin-vue": "^4.0.0",
-  "autoprefixer": "^10.4.14",
-  "postcss": "^8.4.21",
-  "tailwindcss": "^3.3.1",
-  "vite": "^4.1.4"
-}
-```
+---
 
-## 🎨 Frontend Styling
+## 🔐 Security Notes
 
-Frenzo's frontend is styled using **TailwindCSS** with the `@tailwindcss/forms` plugin for easy form styling. All custom styles reside within the `src/assets/` directory.
+- **`SECRET_KEY`** has an insecure default value in `settings.py`. Set a strong, unique key via the `SECRET_KEY` environment variable in `.env` before deploying.
+- **`DEBUG=True`** by default. Set `DEBUG=False` in production.
+- **`.env`** is excluded from the repository by `.gitignore`. Never commit it.
+- **Sightengine credentials** (`SIGHTENGINE_API_USER`, `SIGHTENGINE_API_SECRET`) must be set in `.env` for NSFW moderation to function.
 
-## 🔐 Frontend Security Notes
+---
 
-* ✅ No sensitive data committed directly into the repository.
-* ✅ Safe to push to public GitHub.
+## 🗺️ Upcoming Improvements
+
+- Automated test suite
+- Redis-backed channel layer for multi-process scaling
+- Cloud media storage (AWS S3 / Google Cloud Storage)
+- CI/CD pipeline (GitHub Actions)
+- API documentation (Swagger / OpenAPI)
 
 ---
 
