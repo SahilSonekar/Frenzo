@@ -320,6 +320,154 @@ The access token lifetime is 30 days; the refresh token lifetime is 180 days (co
 
 ---
 
+---
+
+## 🚢 Production Deployment Guide
+
+This guide covers deploying Frenzo to a public server. The Docker Compose approach is recommended.
+
+### Required environment variables
+
+#### Backend (`backend/.env`)
+
+| Variable | Description | Example |
+|---|---|---|
+| `SECRET_KEY` | Django secret key — long, random, unique | see below |
+| `DEBUG` | Must be `False` in production | `False` |
+| `ALLOWED_HOSTS` | Comma-separated public hostnames | `api.yoursite.com` |
+| `WEBSITE_URL` | Public backend URL (no trailing slash) | `https://api.yoursite.com` |
+| `CORS_ALLOWED_ORIGINS` | Trusted frontend origins | `https://yoursite.com` |
+| `CSRF_TRUSTED_ORIGINS` | Same as CORS origins (include scheme) | `https://yoursite.com` |
+| `DB_ENGINE` | MySQL backend | `django.db.backends.mysql` |
+| `DB_NAME` | Database name | `frenzo` |
+| `DB_USER` | Database user | `frenzo_user` |
+| `DB_PASSWORD` | Database password | _(strong random string)_ |
+| `DB_HOST` | MySQL hostname | `db` (Docker) or external host |
+| `DB_PORT` | MySQL port | `3306` |
+| `SECURE_SSL_REDIRECT` | Redirect HTTP → HTTPS at Django layer | `True` (set `False` if nginx handles it) |
+| `SIGHTENGINE_API_USER` | Sightengine moderation API user | _(from sightengine.com)_ |
+| `SIGHTENGINE_API_SECRET` | Sightengine moderation API secret | _(from sightengine.com)_ |
+
+Generate a secure `SECRET_KEY`:
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+#### Frontend (build-time)
+
+| Variable | Description | Example |
+|---|---|---|
+| `VITE_API_URL` | Public backend URL | `https://api.yoursite.com` |
+
+`VITE_API_URL` must be set **before** `npm run build` so it is embedded in the JS bundle. The WebSocket URL is derived from it automatically (`https://` → `wss://`).
+
+---
+
+### Docker Compose deployment
+
+```bash
+# 1. Prepare environment files
+cp backend/.env.example backend/.env      # fill in all production values
+cp frontend/.env.example frontend/.env    # set VITE_API_URL
+
+# 2. Build all images (frontend build args must be passed)
+VITE_API_URL=https://api.yoursite.com \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+# 3. Start services
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# 4. The prod override runs migrate and collectstatic automatically on startup.
+#    Verify in logs:
+docker compose logs backend
+```
+
+The backend starts with Daphne (`daphne -b 0.0.0.0 -p 8000 backend.asgi:application`), which serves both the REST API (HTTP) and real-time chat (WebSocket) on port 8000.
+
+Local development is unchanged:
+```bash
+docker compose up --build   # still uses runserver via docker-compose.yml
+```
+
+---
+
+### Manual / migrations
+
+Apply migrations safely (run before starting the server on a new deployment):
+```bash
+# Inside Docker
+docker compose exec backend python manage.py migrate --noinput
+
+# Without Docker
+cd backend
+python manage.py migrate --noinput
+```
+
+Collect static files:
+```bash
+python manage.py collectstatic --noinput
+```
+
+---
+
+### CORS and ALLOWED_HOSTS
+
+Set these in `backend/.env` to your actual public domains:
+```
+ALLOWED_HOSTS=api.yoursite.com
+CORS_ALLOWED_ORIGINS=https://yoursite.com
+CSRF_TRUSTED_ORIGINS=https://yoursite.com
+```
+
+---
+
+### WebSocket and HTTPS
+
+WebSocket connections go to the same backend host and port as the REST API:
+```
+wss://api.yoursite.com/ws/chat/<conversation_id>/?token=<jwt>
+```
+
+If a reverse proxy (nginx, Caddy, Traefik) terminates TLS, configure it to:
+1. Forward `Upgrade: websocket` and `Connection: upgrade` headers.
+2. Set `X-Forwarded-Proto: https` so Django's `SECURE_PROXY_SSL_HEADER` setting works.
+
+Example nginx upstream block:
+```nginx
+location / {
+    proxy_pass         http://backend:8000;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade $http_upgrade;
+    proxy_set_header   Connection "upgrade";
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+}
+```
+
+---
+
+### User-uploaded media (important)
+
+Media files (post images, avatars) are written to `/app/media` inside the backend container. **Container storage is not persistent by default.**
+
+The Docker Compose files already define a named volume `backend_media` mounted at `/app/media`, which survives container restarts. For production deployments across multiple servers or cloud platforms, use an object-storage bucket (AWS S3, Google Cloud Storage, or equivalent) via [django-storages](https://django-storages.readthedocs.io/). The existing upload and NSFW moderation flow does not need to change — only the storage backend.
+
+---
+
+### Post-deployment verification checklist
+
+```
+[ ] Backend health:   curl https://api.yoursite.com/api/posts/  → 401 (not 500)
+[ ] Login:            POST /api/login/ with test credentials → 200 + tokens
+[ ] WebSocket:        ws://api.yoursite.com/ws/chat/<id>/?token=<jwt> → 101
+[ ] Static files:     https://yoursite.com/static/... served correctly
+[ ] Media files:      Profile avatar URLs resolve correctly
+[ ] HTTPS redirect:   http://api.yoursite.com → 301 to https://
+[ ] Admin panel:      https://api.yoursite.com/admin/ loads
+```
+
+---
+
 ## 🗺️ Upcoming Improvements
 
 - Automated test suite

@@ -1,54 +1,48 @@
 from datetime import timedelta
 from pathlib import Path
 import os
-from decouple import config
+from decouple import config, Csv
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# ---------------------------------------------------------------------------
+# Base directory
+# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Quick-start development settings - unsuitable for production
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-v*=4ctfyl&pe37%c8rs7oa4hoj3h_4w--q9nxw1j=ebd%91865')
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+# SECRET_KEY must be set explicitly via the environment in production.
+# python-decouple raises UndefinedValueError if the key is missing and there
+# is no default — this is intentional so a production deployment never
+# silently falls back to an insecure key.
+# For local development, keep SECRET_KEY= in your backend/.env file.
+SECRET_KEY = config('SECRET_KEY')
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,backend', cast=lambda v: [s.strip() for s in v.split(',')])
+DEBUG = config('DEBUG', default=False, cast=bool)
 
+ALLOWED_HOSTS = config(
+    'ALLOWED_HOSTS',
+    default='localhost,127.0.0.1',
+    cast=Csv(),
+)
+
+# ---------------------------------------------------------------------------
+# Application-level URLs (used when building absolute media/avatar URLs)
+# ---------------------------------------------------------------------------
 WEBSITE_URL = config('WEBSITE_URL', default='http://127.0.0.1:8000')
-SIGHTENGINE_API_USER = config('SIGHTENGINE_API_USER', default='')
+
+# ---------------------------------------------------------------------------
+# External service credentials (Sightengine NSFW moderation)
+# ---------------------------------------------------------------------------
+SIGHTENGINE_API_USER   = config('SIGHTENGINE_API_USER', default='')
 SIGHTENGINE_API_SECRET = config('SIGHTENGINE_API_SECRET', default='')
 
+# ---------------------------------------------------------------------------
 # Application definition
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# ---------------------------------------------------------------------------
+EMAIL_BACKEND  = "django.core.mail.backends.console.EmailBackend"
 AUTH_USER_MODEL = 'account.User'
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
-    'ROTATE_REFRESH_TOKENS': False,
-}
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated',
-    )
-}
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
-CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     'daphne',
@@ -100,72 +94,148 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backend.wsgi.application'
 
-# -----------------------------------------------------------------------
-# ASGI / Django Channels  (real-time WebSocket support for chat)
-# -----------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ASGI / Django Channels (real-time WebSocket support for chat)
+# ---------------------------------------------------------------------------
 ASGI_APPLICATION = 'backend.asgi.application'
 
-# InMemoryChannelLayer is correct for a single-process deployment (Daphne
-# running one worker). For multi-process / production scale, swap this for
-# channels_redis.core.RedisChannelLayer and add a Redis service.
-# NOTE: the correct class path in channels 4.x is channels.layers, NOT
-#       channels.memory (that module does not exist in this version).
+# InMemoryChannelLayer is correct for a single-process Daphne deployment.
+# For multi-process/multi-instance scale, replace with RedisChannelLayer:
+#   BACKEND: channels_redis.core.RedisChannelLayer
+#   CONFIG:  {'hosts': [('redis', 6379)]}
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
     }
 }
 
-# Database
-# For Docker with MySQL
+# ---------------------------------------------------------------------------
+# JWT Authentication
+# ---------------------------------------------------------------------------
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME' : timedelta(days=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
+    'ROTATE_REFRESH_TOKENS' : False,
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# CORS / CSRF
+# CORS_ALLOWED_ORIGINS and CSRF_TRUSTED_ORIGINS are read from the environment
+# so the same settings module works for both local dev and production.
+#
+# Local dev default:  http://localhost:5173,http://127.0.0.1:5173
+# Production example: https://frenzo.example.com
+# ---------------------------------------------------------------------------
+_cors_default = 'http://localhost:5173,http://127.0.0.1:5173'
+
+CORS_ALLOWED_ORIGINS = config(
+    'CORS_ALLOWED_ORIGINS',
+    default=_cors_default,
+    cast=Csv(),
+)
+
+CSRF_TRUSTED_ORIGINS = config(
+    'CSRF_TRUSTED_ORIGINS',
+    default=_cors_default,
+    cast=Csv(),
+)
+
+CORS_ALLOW_CREDENTIALS = True
+
+# ---------------------------------------------------------------------------
+# Database — MySQL (primary)
+# ---------------------------------------------------------------------------
 DATABASES = {
     'default': {
-        'ENGINE': config('DB_ENGINE', default='django.db.backends.mysql'),
-        'NAME': config('DB_NAME', default='myapp'),
-        'USER': config('DB_USER', default='mysqluser'),
+        'ENGINE'  : config('DB_ENGINE', default='django.db.backends.mysql'),
+        'NAME'    : config('DB_NAME',   default='myapp'),
+        'USER'    : config('DB_USER',   default='mysqluser'),
         'PASSWORD': config('DB_PASSWORD', default='mysqlpass'),
-        'HOST': config('DB_HOST', default='db'),
-        'PORT': config('DB_PORT', default='3306'),
+        'HOST'    : config('DB_HOST',   default='db'),
+        'PORT'    : config('DB_PORT',   default='3306'),
+        'OPTIONS' : {
+            # Keep the connection alive to avoid repeated handshakes.
+            # MySQL's default wait_timeout is 8 h; set slightly lower.
+            'connect_timeout': 10,
+        },
     }
 }
 
-# Fallback to SQLite for development
+# Optional: fall back to SQLite for quick local testing without MySQL.
+# Set USE_SQLITE=True in your .env to activate.
 if config('USE_SQLITE', default=False, cast=bool):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME'  : BASE_DIR / 'db.sqlite3',
         }
     }
 
+# ---------------------------------------------------------------------------
 # Password validation
+# ---------------------------------------------------------------------------
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Internationalization
+# ---------------------------------------------------------------------------
+# Internationalisation
+# ---------------------------------------------------------------------------
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Asia/Kolkata'
-USE_I18N = True
-USE_TZ = True
+TIME_ZONE     = 'Asia/Kolkata'
+USE_I18N      = True
+USE_TZ        = True
 
-# Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+# ---------------------------------------------------------------------------
+# Static files
+# ---------------------------------------------------------------------------
+STATIC_URL  = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'   # target of `collectstatic`
 
-MEDIA_URL = 'media/'
+MEDIA_URL  = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Default primary key field type
+# ---------------------------------------------------------------------------
+# Default primary key
+# ---------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ---------------------------------------------------------------------------
+# HTTPS / Security headers
+# These are safe to leave enabled even behind a TLS-terminating reverse proxy.
+# They are guarded behind DEBUG=False so they do not interfere with local dev.
+# ---------------------------------------------------------------------------
+if not DEBUG:
+    # Tell browsers to use HTTPS for all future requests.
+    SECURE_HSTS_SECONDS            = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD            = True
+
+    # Redirect any plain-HTTP request to HTTPS at the Django layer.
+    # Disable if your reverse proxy (nginx/Caddy) already handles this.
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+
+    # Cookies: mark as Secure and HttpOnly.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE    = True
+
+    # Tell Django it is sitting behind a TLS-terminating proxy.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    # Prevent MIME-type sniffing.
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+    # Deny embedding in iframes from other origins.
+    X_FRAME_OPTIONS = 'DENY'

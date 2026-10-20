@@ -138,7 +138,10 @@ export default {
       }
 
       // Derive ws:// or wss:// from the existing axios base URL.
-      const base   = (axios.defaults.baseURL || 'http://localhost:8000').replace(/^http/, 'ws')
+      // axios.defaults.baseURL is set from VITE_API_URL in main.js.
+      // When the site is served over HTTPS the baseURL starts with https://
+      // and the replace turns it into wss://, giving an encrypted WebSocket.
+      const base   = (axios.defaults.baseURL || '').replace(/^http/, 'ws')
       const url    = `${base}/ws/chat/${conversationId}/?token=${token}`
 
       let socket

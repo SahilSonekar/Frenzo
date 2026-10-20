@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Frontend production Dockerfile
+#
+# Stage 1 — build the Vue/Vite application.
+# Stage 2 — serve the built static files with nginx.
+#
+# Build arguments
+# ---------------
+# Pass VITE_API_URL at build time so it is embedded in the JS bundle:
+#
+#   docker build \
+#     --build-arg VITE_API_URL=https://api.yoursite.com \
+#     -f Dockerfile.prod -t frenzo-frontend .
+#
+# Or set it via docker-compose.prod.yml:
+#   build:
+#     args:
+#       VITE_API_URL: ${VITE_API_URL}
+# ---------------------------------------------------------------------------
+
+# ── Stage 1: build ──────────────────────────────────────────────────────────
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Accept VITE_API_URL as a build argument and expose it to the Vite build.
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=${VITE_API_URL}
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+RUN npm run build          # outputs to /app/dist
+
+# ── Stage 2: serve ──────────────────────────────────────────────────────────
+FROM nginx:1.25-alpine
+
+# Remove default nginx welcome page.
+RUN rm -f /usr/share/nginx/html/index.html
+
+# Copy the Vite build output.
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# nginx config: serve the SPA and forward all routes to index.html so that
+# Vue Router's history mode works correctly on page refresh.
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

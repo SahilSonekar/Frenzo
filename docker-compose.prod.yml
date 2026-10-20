@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Production Docker Compose override
+#
+# Use this file TOGETHER with the base docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this override does:
+#   • Starts the backend with Daphne (ASGI) instead of runserver.
+#   • Collects static files before the server starts.
+#   • Creates the media directory if it does not exist.
+#   • Runs database migrations automatically on startup.
+#   • Removes the database port mapping so MySQL is not exposed to the host.
+#   • Sets DJANGO_SETTINGS_MODULE to the production settings module.
+#   • Builds the frontend for production (static files, not the dev server).
+#
+# Prerequisites
+# -------------
+#   1. Copy backend/.env.example → backend/.env and fill in all values
+#      (SECRET_KEY, DEBUG=False, ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS, DB_*,
+#       WEBSITE_URL, SIGHTENGINE_API_USER/SECRET).
+#   2. Copy frontend/.env.example → frontend/.env and set VITE_API_URL.
+#   3. docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+#   4. docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ---------------------------------------------------------------------------
+
+version: '3.8'
+
+services:
+
+  backend:
+    # Override the dev runserver CMD with Daphne (ASGI).
+    # Daphne serves both HTTP REST and WebSocket connections on port 8000.
+    # backend.asgi:application is the ProtocolTypeRouter defined in asgi.py.
+    command: >
+      sh -c "
+        python manage.py collectstatic --noinput &&
+        mkdir -p /app/media &&
+        python manage.py migrate --noinput &&
+        daphne -b 0.0.0.0 -p 8000 backend.asgi:application
+      "
+    environment:
+      DJANGO_SETTINGS_MODULE: backend.settingprod
+
+  frontend:
+    # Build for production and serve with a lightweight static file server.
+    # The Vite dev server is replaced with `serve` (zero-config static host).
+    # VITE_API_URL must be set so the build embeds the correct backend URL.
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod    # see frontend/Dockerfile.prod
+    ports:
+      - "80:80"
+    environment: []                  # frontend reads from its own .env at build time
+
+  db:
+    # In production the database port should NOT be exposed to the host.
+    # Remove the 3307:3306 mapping inherited from docker-compose.yml.
+    ports: []
