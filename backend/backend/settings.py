@@ -113,8 +113,8 @@ CHANNEL_LAYERS = {
 # JWT Authentication
 # ---------------------------------------------------------------------------
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME' : timedelta(days=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
+    'ACCESS_TOKEN_LIFETIME' : timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS' : False,
 }
 
