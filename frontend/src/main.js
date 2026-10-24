@@ -1,31 +1,31 @@
+
 /**
  * Application entry point.
  *
  * Axios configuration
  * -------------------
- * baseURL        — reads VITE_API_URL env var; falls back to localhost:8000
- *                  for local development without a .env file.
- * withCredentials — true so the browser sends the HttpOnly refresh cookie
- *                   on requests to the API origin (required for /api/refresh/
- *                   and /api/logout/).
- * X-CSRFToken    — request interceptor reads the 'csrftoken' cookie that
- *                  Django sets (via @ensure_csrf_cookie on login/signup) and
- *                  attaches it as a header so Django's @csrf_protect passes.
+ * baseURL — reads VITE_API_URL; falls back to localhost:8000 for development.
+ *
+ * withCredentials — enables cookies to be sent with API requests, including
+ * the HttpOnly refresh cookie used by the refresh and logout endpoints.
+ *
+ * X-CSRFToken — reads the 'csrftoken' cookie and attaches it to non-safe
+ * HTTP requests. Refresh and logout enforce CSRF validation through
+ * CsrfEnforcedNoAuth on the backend.
+ *
+ * @ensure_csrf_cookie on signup/login sets the CSRF cookie but does not
+ * itself validate incoming CSRF tokens.
  *
  * Token attachment
  * ----------------
- * The request interceptor reads the current access token from the Pinia store
- * (in-memory only) and sets the Authorization header.  This replaces the
- * previous pattern of setting axios.defaults.headers.common globally from
- * multiple places.
+ * The request interceptor attaches the access token from Pinia memory
+ * to ordinary authenticated API requests.
  *
  * 401 retry / refresh
- * --------------------
- * The response interceptor catches 401 responses, requests a token refresh
- * via the HttpOnly cookie, updates the store, and retries the original
- * request exactly once.  If the refresh fails the user is treated as logged
- * out.  Requests already carrying the _skipAuthRetry flag are never retried
- * (prevents infinite loops).
+ * -------------------
+ * The response interceptor attempts a refresh after eligible 401 responses,
+ * retries the original request at most once, and redirects to login if
+ * refreshing fails. Refresh and logout requests are excluded from retry.
  */
 
 import { createApp } from 'vue'
@@ -38,52 +38,81 @@ import axios from 'axios'
 import './assets/main.css'
 
 // ---------------------------------------------------------------------------
-// Base URL — set from build-time env var; localhost fallback for dev.
+// Base URL and cookie configuration
 // ---------------------------------------------------------------------------
-axios.defaults.baseURL     = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-axios.defaults.withCredentials = true   // send the HttpOnly refresh cookie
+axios.defaults.baseURL =
+  import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+axios.defaults.withCredentials = true
 
 // ---------------------------------------------------------------------------
-// Helper: read a cookie value by name (used for CSRF token).
-// Returns '' when the cookie is absent.
+// Helper: read a cookie by name.
+// Returns an empty string when the cookie is absent.
 // ---------------------------------------------------------------------------
 function getCookie(name) {
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  const match = document.cookie.match(
+    new RegExp('(?:^|; )' + name + '=([^;]*)')
+  )
+
   return match ? decodeURIComponent(match[1]) : ''
 }
 
 // ---------------------------------------------------------------------------
 // Request interceptor
-// 1. Attach Authorization header from Pinia memory (set by setAccessToken).
-//    The header is already set on the axios defaults after login/signup; this
-//    interceptor ensures newly created axios instances also carry it.
-// 2. Attach X-CSRFToken from the 'csrftoken' cookie for state-mutating
-//    requests to Django endpoints protected with @csrf_protect.
+// 1. Attach the access token from Pinia memory.
+// 2. Attach X-CSRFToken for non-safe HTTP methods.
 // ---------------------------------------------------------------------------
-axios.interceptors.request.use(config => {
-  // CSRF — attach for all non-safe methods.
+axios.interceptors.request.use(async config => {
   const safeMethods = ['get', 'head', 'options', 'trace']
-  if (!safeMethods.includes((config.method || 'get').toLowerCase())) {
+  const method = (config.method || 'get').toLowerCase()
+
+  // Attach the current in-memory access token.
+  // Do not attach it to login, signup, or refresh requests.
+  const isAuthEndpoint =
+    config.url?.includes('/api/login/') ||
+    config.url?.includes('/api/signup/') ||
+    config.url?.includes('/api/refresh/')
+
+  if (!isAuthEndpoint) {
+    const { useUserStore } = await import('@/stores/user')
+    const userStore = useUserStore()
+
+    if (userStore.user.access) {
+      config.headers = config.headers || {}
+      config.headers.Authorization = `Bearer ${userStore.user.access}`
+    }
+  }
+
+  // Attach CSRF token to non-safe HTTP requests.
+  if (!safeMethods.includes(method)) {
     const csrfToken = getCookie('csrftoken')
+
     if (csrfToken) {
+      config.headers = config.headers || {}
       config.headers['X-CSRFToken'] = csrfToken
     }
   }
+
   return config
 })
 
 // ---------------------------------------------------------------------------
-// Response interceptor — 401 handling with single-refresh retry
+// Response interceptor — handle eligible 401 responses with one refresh.
 // ---------------------------------------------------------------------------
 axios.interceptors.response.use(
-  response => response,   // pass through successful responses unchanged
+  response => response,
 
   async error => {
     const originalRequest = error.config
 
-    // Only act on 401 responses that haven't already been retried and are
-    // not themselves a refresh or logout call.
+    // Ignore errors without an associated request.
+    if (!originalRequest) {
+      return Promise.reject(error)
+    }
+
     const isAuthEndpoint =
+      originalRequest.url?.includes('/api/login/') ||
+      originalRequest.url?.includes('/api/signup/') ||
       originalRequest.url?.includes('/api/refresh/') ||
       originalRequest.url?.includes('/api/logout/')
 
@@ -92,33 +121,39 @@ axios.interceptors.response.use(
       !originalRequest._skipAuthRetry &&
       !isAuthEndpoint
     ) {
+      // Mark the request before refreshing to prevent infinite retries.
       originalRequest._skipAuthRetry = true
 
-      // Lazy-import to avoid a circular dependency at module load time.
-      const { useUserStore } = await import('@/stores/user')
-      const userStore = useUserStore()
+      try {
+        const { useUserStore } = await import('@/stores/user')
+        const userStore = useUserStore()
 
-      const newToken = await userStore.attemptRefresh()
-      if (newToken) {
-        // Retry the original request with the refreshed token.
-        originalRequest.headers['Authorization'] = 'Bearer ' + newToken
-        return axios(originalRequest)
+        const newToken = await userStore.attemptRefresh()
+
+        if (newToken) {
+          originalRequest.headers = originalRequest.headers || {}
+          originalRequest.headers.Authorization = `Bearer ${newToken}`
+
+          return axios(originalRequest)
+        }
+      } catch (refreshError) {
+        // Refresh failed; continue to the login redirect below.
       }
 
-      // Refresh failed — redirect to login.
       router.push('/login')
     }
 
     return Promise.reject(error)
-  },
+  }
 )
 
 // ---------------------------------------------------------------------------
 // Mount the Vue application
 // ---------------------------------------------------------------------------
 const app = createApp(App)
+const pinia = createPinia()
 
-app.use(createPinia())
-app.use(router, axios)
+app.use(pinia)
+app.use(router)
 
 app.mount('#app')
