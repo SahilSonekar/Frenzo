@@ -133,6 +133,85 @@ class SignupTests(TestCase):
         }, content_type='application/json')
         self.assertEqual(r.status_code, 400)
 
+    def test_signup_missing_name_returns_400(self):
+        """Signup with an empty name returns 400 with a name field error."""
+        c = Client(enforce_csrf_checks=False)
+        r = c.post(_SIGNUP_URL, {
+            'email': 'noname@example.com', 'name': '',
+            'password1': 'StrongPass123!', 'password2': 'StrongPass123!',
+        }, content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+        data = _json(r)
+        self.assertIn('message', data)
+        import json
+        parsed = json.loads(data['message'])
+        self.assertIn('name', parsed)
+
+    def test_signup_duplicate_email_returns_400(self):
+        """Signup with an already-registered email returns 400 with an email error."""
+        _make_user(email='dup@example.com')
+        c = Client(enforce_csrf_checks=False)
+        r = c.post(_SIGNUP_URL, {
+            'email': 'dup@example.com', 'name': 'Dup User',
+            'password1': 'StrongPass123!', 'password2': 'StrongPass123!',
+        }, content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+        data = _json(r)
+        import json
+        parsed = json.loads(data['message'])
+        self.assertIn('email', parsed)
+
+    def test_signup_error_response_contains_parseable_message(self):
+        """
+        The error response body contains a 'message' key whose value is
+        a valid JSON string with field-name keys and error-list values.
+        This is what the frontend parses to display per-field errors.
+        """
+        import json
+        c = Client(enforce_csrf_checks=False)
+        r = c.post(_SIGNUP_URL, {
+            'email': 'x@x.com', 'name': 'X',
+            'password1': 'abc', 'password2': 'xyz',
+        }, content_type='application/json')
+        self.assertEqual(r.status_code, 400)
+        data = _json(r)
+        self.assertIn('message', data)
+        # message must be a parseable JSON string
+        parsed = json.loads(data['message'])
+        self.assertIsInstance(parsed, dict)
+        # At least one field error
+        self.assertGreater(len(parsed), 0)
+        # Each value is a list of dicts with 'message' and 'code' keys
+        for field, errs in parsed.items():
+            for err in errs:
+                self.assertIn('message', err)
+                self.assertIn('code', err)
+
+    def test_signup_sets_csrftoken_cookie(self):
+        """
+        A successful signup response must set the 'csrftoken' cookie.
+
+        signup is decorated with @ensure_csrf_cookie, which instructs Django
+        to always include Set-Cookie: csrftoken=... in the response.  The
+        frontend Axios interceptor reads this cookie to obtain the token it
+        must send as X-CSRFToken on subsequent state-mutating requests
+        (refresh, logout).
+
+        Importantly, this test does NOT require signup itself to reject
+        requests that lack a CSRF token — @ensure_csrf_cookie only *sets*
+        the cookie; it does not *enforce* it.  That is the correct design
+        because signup is a credential-based, unauthenticated endpoint.
+        """
+        c = Client(enforce_csrf_checks=False)
+        r = c.post(_SIGNUP_URL, {
+            'email': 'csrftest@example.com', 'name': 'CSRF Test',
+            'password1': 'StrongPass123!', 'password2': 'StrongPass123!',
+        }, content_type='application/json')
+
+        self.assertEqual(r.status_code, 200, "Signup should succeed")
+        self.assertIn('csrftoken', r.cookies,
+                      "@ensure_csrf_cookie must set the csrftoken cookie on signup")
+
 
 # ---------------------------------------------------------------------------
 # 4–5  Login
@@ -320,6 +399,45 @@ class CsrfTests(TestCase):
         r = strict_client.post(_LOGOUT_URL, content_type='application/json')
         self.assertEqual(r.status_code, 403,
                          "Logout without CSRF token must return 403")
+
+    def test_08c_refresh_with_valid_csrf_succeeds(self):
+        """
+        Refresh with a valid CSRF token and a valid refresh cookie must
+        pass CSRF validation and return a new access token (200).
+
+        The CSRF cookie is obtained from a signup/login response via
+        @ensure_csrf_cookie.  Django's test Client copies the csrftoken
+        cookie into subsequent requests automatically when the same Client
+        instance is reused; we additionally supply the token in the
+        X-CSRFToken header as the Axios interceptor does in the browser.
+        """
+        # Step 1 — obtain a refresh cookie AND the csrftoken cookie from login.
+        # Login uses @ensure_csrf_cookie so it always sets csrftoken.
+        c = Client(enforce_csrf_checks=True)
+        c.post(_LOGIN_URL, {
+            'email': 'user@example.com', 'password': 'StrongPass123!',
+        }, content_type='application/json')
+
+        # The csrftoken cookie is now in the client's cookie jar.
+        csrf_token = c.cookies.get('csrftoken')
+        self.assertIsNotNone(csrf_token,
+                             "Login must set the csrftoken cookie (enforce_csrf_cookie)")
+        csrf_value = csrf_token.value
+
+        # Step 2 — POST to /api/refresh/ with the X-CSRFToken header.
+        # The refresh cookie was set by the login call above and is still
+        # present in the same Client instance's cookie jar.
+        r = c.post(
+            _REFRESH_URL,
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=csrf_value,
+        )
+
+        self.assertEqual(r.status_code, 200,
+                         "Refresh with a valid CSRF token must succeed (200)")
+        data = json.loads(r.content)
+        self.assertIn('access', data,
+                      "Successful refresh must return a new access token")
 
 
 # ---------------------------------------------------------------------------

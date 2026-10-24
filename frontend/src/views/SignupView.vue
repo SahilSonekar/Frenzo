@@ -29,12 +29,14 @@ const form = ref({
 const errors = ref([])
 
 const submitForm = async () => {
+  // Clear previous errors on every submission attempt.
   errors.value = []
 
-  if (!form.value.email)    errors.value.push('Your e-mail is missing')
-  if (!form.value.name)     errors.value.push('Your name is missing')
+  // Client-side pre-checks (avoid a round-trip for obvious mistakes).
+  if (!form.value.email)     errors.value.push('Your e-mail is missing')
+  if (!form.value.name)      errors.value.push('Your name is missing')
   if (!form.value.password1) errors.value.push('Your password is missing')
-  if (form.value.password1 !== form.value.password2)
+  if (form.value.password1 && form.value.password1 !== form.value.password2)
     errors.value.push('The passwords do not match')
 
   if (errors.value.length > 0) return
@@ -42,31 +44,56 @@ const submitForm = async () => {
   try {
     const response = await axios.post('/api/signup/', form.value)
 
-    if (response.data.message === 'success') {
-      // Store the access token in Pinia memory only.
-      // The refresh token is in the HttpOnly cookie — never touch it here.
-      userStore.setAccessToken(response.data.access)
+    // HTTP 200 — registration succeeded.
+    userStore.setAccessToken(response.data.access)
+    const userData = response.data.user
+    userStore.setUserInfo({
+      id    : userData.id,
+      name  : userData.name,
+      email : userData.email,
+      avatar: userData.get_avatar,
+    })
+    toastStore.showToast(5000, 'Welcome to Frenzo!', 'bg-emerald-500')
+    router.push('/feed')
 
-      const userData = response.data.user
-      userStore.setUserInfo({
-        id    : userData.id,
-        name  : userData.name,
-        email : userData.email,
-        avatar: userData.get_avatar,
-      })
-
-      toastStore.showToast(5000, 'Welcome to Frenzo!', 'bg-emerald-500')
-      router.push('/feed')
-    } else {
-      const data = JSON.parse(response.data.message)
-      for (const key in data) {
-        errors.value.push(data[key][0].message)
-      }
-      toastStore.showToast(5000, 'Something went wrong. Please try again.', 'bg-red-300')
-    }
   } catch (error) {
-    console.error('[Signup] Request failed')
-    toastStore.showToast(5000, 'Server error. Try again later.', 'bg-red-500')
+    // Axios throws for any 4xx/5xx response.
+    const data = error.response?.data
+
+    if (error.response?.status === 400 && data?.message) {
+      // The backend returns validation errors as a JSON-encoded string
+      // in data.message, structured as:
+      //   { fieldName: [{ message: "...", code: "..." }, ...], ... }
+      try {
+        const fieldErrors = JSON.parse(data.message)
+        const extracted = []
+        for (const field in fieldErrors) {
+          for (const err of fieldErrors[field]) {
+            extracted.push(err.message)
+          }
+        }
+        if (extracted.length > 0) {
+          errors.value = extracted
+        } else {
+          // Parsed fine but no messages — show a fallback.
+          errors.value = ['Registration failed. Please check your details.']
+        }
+      } catch {
+        // data.message exists but is not valid JSON (unexpected backend format).
+        errors.value = ['Registration failed. Please check your details.']
+      }
+      toastStore.showToast(4000, 'Please fix the errors below.', 'bg-red-400')
+
+    } else if (!error.response) {
+      // Network error — server unreachable, DNS failure, etc.
+      errors.value = ['Cannot reach the server. Please check your connection and try again.']
+      toastStore.showToast(5000, 'Connection error. Try again later.', 'bg-red-500')
+
+    } else {
+      // Unexpected HTTP error (5xx or unknown 4xx).
+      errors.value = ['Something went wrong. Please try again later.']
+      toastStore.showToast(5000, 'Server error. Try again later.', 'bg-red-500')
+    }
   }
 }
 </script>

@@ -17,22 +17,31 @@ JavaScript cannot read it.
 
 CSRF protection
 ---------------
-The refresh and logout endpoints do not use JWT authentication (they read the
-cookie directly), so DRF's default CSRF-exempt behaviour for @api_view would
-leave them unprotected.  They are explicitly wrapped with Django's
-@csrf_protect to require a valid CSRF token.
+signup and login
+    Decorated with @ensure_csrf_cookie.  This causes Django to *set* the
+    csrftoken cookie on every response from these endpoints so the browser
+    has a token available before it sends any state-mutating request.
+    CSRF enforcement is not required on these two endpoints because an
+    attacker would also need the user's password to do anything useful —
+    the credential itself is the protection.
 
-The login endpoint is decorated with @ensure_csrf_cookie so the browser
-receives the CSRF cookie on the first visit even before the user logs in.
+refresh and logout
+    These endpoints read the HttpOnly refresh cookie and therefore rely on
+    cookie-based auth.  They are protected against CSRF by
+    CsrfEnforcedNoAuth, a custom DRF authentication class that calls
+    SessionAuthentication.enforce_csrf() without requiring a real session.
+    DRF calls authenticate() on every authentication class before the view
+    runs, so the CSRF check happens at the right point in the request
+    lifecycle.  A missing or invalid X-CSRFToken header → 403.
 
-Axios is configured on the frontend to:
-  1. Send credentials (cookies) with every request.
-  2. Read the CSRF token from the 'csrftoken' cookie and send it in the
-     'X-CSRFToken' request header.
-  3. Obtain the CSRF cookie automatically from the first login/signup
-     response (both are decorated with @ensure_csrf_cookie).
+Axios frontend configuration
+    1. withCredentials=true so the browser sends the HttpOnly cookie.
+    2. Request interceptor reads the 'csrftoken' cookie and sends it in
+       'X-CSRFToken' for all state-mutating (non-safe) requests.
+    3. The csrftoken cookie is issued by signup/login via @ensure_csrf_cookie.
 """
 
+import json
 import uuid
 
 from django.conf import settings
@@ -129,6 +138,12 @@ def signup(request):
 
     if not form.is_valid():
         return JsonResponse({'message': form.errors.as_json()}, status=400)
+
+    # name is blank=True on the model (so Django's form doesn't flag it),
+    # but we require it for a meaningful user profile.
+    if not request.data.get('name', '').strip():
+        err = json.dumps({'name': [{'message': 'Your name is required.', 'code': 'required'}]})
+        return JsonResponse({'message': err}, status=400)
 
     user = form.save()
     user.is_active = True
