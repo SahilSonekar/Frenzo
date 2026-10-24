@@ -118,6 +118,28 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS' : False,
 }
 
+# ---------------------------------------------------------------------------
+# Refresh-token HttpOnly cookie settings
+# These are read in account/api.py when setting/clearing the cookie.
+#
+# REFRESH_COOKIE_SECURE   — True in production (HTTPS); False for local HTTP
+#                           dev.  Defaults to False so the dev server works
+#                           without TLS.  In production set to True via .env.
+# REFRESH_COOKIE_SAMESITE — 'Lax' is correct for a same-site SPA that sends
+#                           credentialed requests from the same origin.
+#                           Use 'None' only if the frontend and backend are on
+#                           different domains AND you have HTTPS + Secure=True.
+# ---------------------------------------------------------------------------
+REFRESH_COOKIE_SECURE   = config('REFRESH_COOKIE_SECURE',   default=False, cast=bool)
+REFRESH_COOKIE_SAMESITE = config('REFRESH_COOKIE_SAMESITE', default='Lax')
+
+# ---------------------------------------------------------------------------
+# WebSocket ticket cache settings
+# Short-lived (30 s), single-use UUID tickets for WebSocket authentication.
+# Stored in Django's default cache (LocMemCache in a single-process deploy).
+# ---------------------------------------------------------------------------
+WS_TICKET_TTL = 30  # seconds
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

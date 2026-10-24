@@ -27,21 +27,24 @@ const errors = ref([])
 const submitForm = async () => {
   errors.value = []
 
-  if (form.email === '') errors.value.push('Your e-mail is missing')
+  if (form.email === '')    errors.value.push('Your e-mail is missing')
   if (form.password === '') errors.value.push('Your password is missing')
 
   if (errors.value.length === 0) {
     try {
       const response = await axios.post('/api/login/', form)
-      userStore.setToken(response.data)
-      axios.defaults.headers.common["Authorization"] = "Bearer " + response.data.access
 
+      // Store the access token in Pinia memory only.
+      // The refresh token is in the HttpOnly cookie — never touch it here.
+      userStore.setAccessToken(response.data.access)
+
+      // Fetch and store the authenticated user's profile.
       const me = await axios.get('/api/me/')
       userStore.setUserInfo(me.data)
 
       router.push('/feed')
     } catch (error) {
-      console.error(error)
+      console.error('[Login] Request failed')
       errors.value.push('Incorrect email/password or account not activated.')
     }
   }

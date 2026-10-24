@@ -31,10 +31,11 @@ const errors = ref([])
 const submitForm = async () => {
   errors.value = []
 
-  if (!form.value.email) errors.value.push('Your e-mail is missing')
-  if (!form.value.name) errors.value.push('Your name is missing')
+  if (!form.value.email)    errors.value.push('Your e-mail is missing')
+  if (!form.value.name)     errors.value.push('Your name is missing')
   if (!form.value.password1) errors.value.push('Your password is missing')
-  if (form.value.password1 !== form.value.password2) errors.value.push('The password does not match')
+  if (form.value.password1 !== form.value.password2)
+    errors.value.push('The passwords do not match')
 
   if (errors.value.length > 0) return
 
@@ -42,23 +43,18 @@ const submitForm = async () => {
     const response = await axios.post('/api/signup/', form.value)
 
     if (response.data.message === 'success') {
-      // 1. Store tokens in Pinia & LocalStorage
-      userStore.setToken({
-        access: response.data.access,
-        refresh: response.data.refresh
-      })
-      axios.defaults.headers.common["Authorization"] = "Bearer " + response.data.access
+      // Store the access token in Pinia memory only.
+      // The refresh token is in the HttpOnly cookie — never touch it here.
+      userStore.setAccessToken(response.data.access)
 
-      // 2. Set user details
       const userData = response.data.user
       userStore.setUserInfo({
-        id: userData.id,
-        name: userData.name,
-        email: userData.email,
-        avatar: userData.get_avatar
+        id    : userData.id,
+        name  : userData.name,
+        email : userData.email,
+        avatar: userData.get_avatar,
       })
 
-      // 3. Show success toast and redirect directly to Feed
       toastStore.showToast(5000, 'Welcome to Frenzo!', 'bg-emerald-500')
       router.push('/feed')
     } else {
@@ -69,7 +65,7 @@ const submitForm = async () => {
       toastStore.showToast(5000, 'Something went wrong. Please try again.', 'bg-red-300')
     }
   } catch (error) {
-    console.error(error)
+    console.error('[Signup] Request failed')
     toastStore.showToast(5000, 'Server error. Try again later.', 'bg-red-500')
   }
 }

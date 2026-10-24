@@ -271,17 +271,13 @@ export default {
     },
   },
 
-  created() {
-    this.userStore.initStore();
+  async created() {
+    // initStore() calls POST /api/refresh/ using the HttpOnly cookie to
+    // restore the session.  It sets the Axios Authorization header internally
+    // on success.  We do not read or set tokens here.
+    await this.userStore.initStore();
 
-    const token = this.userStore.user.access;
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = "Bearer " + token;
-    } else {
-      axios.defaults.headers.common["Authorization"] = "";
-    }
-
-    // Load dark mode from localStorage
+    // Load dark mode from localStorage (non-sensitive UI preference).
     const savedTheme = localStorage.getItem("theme");
     this.darkMode = savedTheme === "light" ? false : true; // default to dark
     this.updateHtmlClass();

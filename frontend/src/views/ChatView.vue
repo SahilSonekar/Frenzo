@@ -127,22 +127,28 @@ export default {
   methods: {
     // ── WebSocket helpers ────────────────────────────────────────────────
 
-    openSocket(conversationId) {
+    async openSocket(conversationId) {
       this.closeSocket()                      // close any previous connection
       if (!conversationId) return
 
-      const token = this.userStore.user.access
-      if (!token) {
-        console.error('[Chat] No access token – WebSocket not opened')
+      // 1. Obtain a short-lived, single-use WS ticket from the backend.
+      //    The ticket endpoint requires a valid Bearer access token.
+      //    This avoids putting the access JWT directly in the WebSocket URL
+      //    (which would be visible in server logs).
+      let ticket
+      try {
+        const resp = await axios.get('/api/ws-ticket/')
+        ticket = resp.data.ticket
+      } catch (err) {
+        console.error('[Chat] Could not obtain WS ticket – WebSocket not opened')
+        this.wsError = true
         return
       }
 
-      // Derive ws:// or wss:// from the existing axios base URL.
-      // axios.defaults.baseURL is set from VITE_API_URL in main.js.
-      // When the site is served over HTTPS the baseURL starts with https://
-      // and the replace turns it into wss://, giving an encrypted WebSocket.
-      const base   = (axios.defaults.baseURL || '').replace(/^http/, 'ws')
-      const url    = `${base}/ws/chat/${conversationId}/?token=${token}`
+      // 2. Build the WebSocket URL with the ticket (not the access token).
+      //    http → ws, https → wss (automatic secure upgrade in production).
+      const base = (axios.defaults.baseURL || '').replace(/^http/, 'ws')
+      const url  = `${base}/ws/chat/${conversationId}/?ticket=${ticket}`
 
       let socket
       try {
